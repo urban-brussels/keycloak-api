@@ -1,0 +1,22 @@
+{
+  "name": "urban-brussels/keycloak-api",
+  "description": "PHP wrapper for Keycloak API",
+  "homepage": "https://github.com/urban-brussels/keycloak-api",
+  "keywords": ["Keycloak","API","PHP"],
+  "require": {
+    "php": "^8.1",
+    "symfony/http-client": "6.*",
+    "symfony/dependency-injection": "^6.3",
+    "symfony/http-kernel": "^6.3"
+  }
+,
+  "require-dev": {
+    "roave/security-advisories": "dev-latest"
+  },
+  "license": "MIT",
+  "autoload": {
+    "psr-4": {
+      "UrbanBrussels\\KeycloakApi\\": "src/"
+    }
+  }
+}
