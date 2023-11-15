@@ -67,7 +67,7 @@ class KeycloakApi
             ]
         ]);
         $groups = json_decode($response->getContent());
-        return $groups[1]->id;
+        return $groups[0]->id;
     }
 
     // Get users from the group
