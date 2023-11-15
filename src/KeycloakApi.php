@@ -120,9 +120,10 @@ class KeycloakApi
     }
 
     // Create user in the Realm
-    public function createUser(array $userData): string
+    public function createUser(array $userData, bool $emailVerified = false): string
     {
         $userData['enabled'] = true;
+        $userData['emailVerified'] = $emailVerified;
 
         $response = $this->httpClient->request('POST', $this->keycloakBaseUrl.'/admin/realms/'.$this->realm.'/users', [
             'headers' => [
