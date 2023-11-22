@@ -119,6 +119,34 @@ class KeycloakApi
         return $response->toArray();
     }
 
+    // Get group by path
+    public function getGroupInfoByPath(string $groupPath): array
+    {
+        // Get all groups
+        $response = $this->httpClient->request('GET', $this->keycloakBaseUrl . '/admin/realms/' . $this->realm . '/groups', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $this->getToken(),
+            ]
+        ]);
+
+        $groups = json_decode($response->getContent());
+
+        // Filtrer pour trouver le groupe avec le chemin spécifié
+        foreach ($groups as $group) {
+            foreach ($group->subGroups as $subgroup) {
+                if ($subgroup->path === $groupPath) {
+                    return [
+                        "id" => $subgroup->id,
+                        "name" => $subgroup->name,
+                        "path" => $subgroup->path,
+                    ];
+                }
+            }
+        }
+
+        return []; // Retourne null si aucun groupe correspondant n'est trouvé
+    }
+
     // Create user in the Realm
     public function createUser(array $userData, bool $emailVerified = false): string
     {
