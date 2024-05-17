@@ -6,8 +6,8 @@
   "require": {
     "php": "^8.1",
     "symfony/http-client": "6.*|7.*",
-    "symfony/dependency-injection": "^6.3",
-    "symfony/http-kernel": "^6.3"
+    "symfony/dependency-injection": "^6.3|7.*",
+    "symfony/http-kernel": "^6.3|7.*"
   }
 ,
   "require-dev": {
