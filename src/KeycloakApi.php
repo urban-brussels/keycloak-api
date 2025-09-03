@@ -147,6 +147,39 @@ class KeycloakApi
         return []; // Retourne null si aucun groupe correspondant n'est trouvé
     }
 
+    // Get all groups
+    public function getGroups(): array
+    {
+        $response = $this->httpClient->request('GET', $this->keycloakBaseUrl . '/admin/realms/' . $this->realm . '/groups', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $this->getToken(),
+            ]
+        ]);
+
+        $topLevelGroups = json_decode($response->getContent(), true);
+        $allGroups = [];
+
+        foreach ($topLevelGroups as $group) {
+            $allGroups[] = [
+                'id' => $group['id'],
+                'name' => $group['name'],
+                'path' => $group['path'],
+            ];
+
+            if (!empty($group['subGroups'])) {
+                foreach ($group['subGroups'] as $subgroup) {
+                    $allGroups[] = [
+                        'id' => $subgroup['id'],
+                        'name' => $subgroup['name'],
+                        'path' => $subgroup['path'],
+                    ];
+                }
+            }
+        }
+
+        return $allGroups;
+    }
+
     // Create user in the Realm
     public function createUser(array $userData, bool $emailVerified = false): string
     {
