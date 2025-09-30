@@ -75,7 +75,11 @@ class KeycloakApi
     {
         $response = $this->httpClient->request('GET', $this->keycloakBaseUrl.'/admin/realms/'.$this->realm.'/groups/'.$groupId.'/members', [
             'headers' => [
-                'Authorization' => 'Bearer '.$this->getToken(),
+                'Authorization' => 'Bearer ' . $this->getToken(),
+            ],
+            'query' => [
+                'first' => 0,
+                'max' => 1000,
             ]
         ]);
 
@@ -107,77 +111,152 @@ class KeycloakApi
         return $response->toArray();
     }
 
-    // Get group information
-    public function getGroupInfo(string $groupId): array
-    {
-        $response = $this->httpClient->request('GET', $this->keycloakBaseUrl.'/admin/realms/' . $this->realm . '/groups/' . $groupId, [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $this->getToken(),
-            ]
-        ]);
-
-        return $response->toArray();
-    }
-
-    // Get group by path
+    /**
+     * Retrouve les informations d'un groupe en parcourant l'arborescence à partir de son chemin complet.
+     *
+     * @param string $groupPath Le chemin complet du groupe (ex: "/Communes/Anderlecht").
+     * @return array Les informations du groupe ou un tableau vide si non trouvé.
+     */
     public function getGroupInfoByPath(string $groupPath): array
     {
-        // Get all groups
+        // Nettoyer et décomposer le chemin en segments. Ex: "/Communes/Anderlecht" -> ['Communes', 'Anderlecht']
+        $segments = array_filter(explode('/', $groupPath));
+        if (empty($segments)) {
+            return []; // Chemin invalide ou racine
+        }
+
+        // On stocke le premier segment avant de le retirer du tableau
+        $firstSegment = array_shift($segments);
+
+        // Étape 1 : Trouver le groupe de premier niveau
         $response = $this->httpClient->request('GET', $this->keycloakBaseUrl . '/admin/realms/' . $this->realm . '/groups', [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $this->getToken(),
+            'headers' => ['Authorization' => 'Bearer ' . $this->getToken()],
+            'query' => [
+                'search' => $firstSegment, // On cherche le premier segment
+                'exact' => 'true'
             ]
         ]);
+        $topLevelGroups = json_decode($response->getContent(), true);
 
-        $groups = json_decode($response->getContent());
-
-        // Filtrer pour trouver le groupe avec le chemin spécifié
-        foreach ($groups as $group) {
-            foreach ($group->subGroups as $subgroup) {
-                if ($subgroup->path === $groupPath) {
-                    return [
-                        "id" => $subgroup->id,
-                        "name" => $subgroup->name,
-                        "path" => $subgroup->path,
-                    ];
-                }
+        // On s'assure de trouver un seul groupe de premier niveau avec le bon nom
+        $currentGroup = null;
+        foreach ($topLevelGroups as $group) {
+            if ($group['name'] === $firstSegment) {
+                $currentGroup = $group;
+                break;
             }
         }
 
-        return []; // Retourne null si aucun groupe correspondant n'est trouvé
+        if (!$currentGroup) {
+            return []; // Le groupe de départ n'a pas été trouvé
+        }
+
+        // Étape 2 : Descendre dans l'arborescence pour chaque segment RESTANT
+        foreach ($segments as $segment) {
+            $response = $this->httpClient->request('GET', $this->keycloakBaseUrl . '/admin/realms/' . $this->realm . '/groups/' . $currentGroup['id'] . '/children', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $this->getToken(),
+                ],
+                'query' => [
+                    'first' => 0,
+                    'max' => 50,
+                ]
+            ]);
+            $children = json_decode($response->getContent(), true);
+
+            $found = false;
+            foreach ($children as $child) {
+                if ($child['name'] === $segment) {
+                    $currentGroup = $child; // On a trouvé le prochain niveau
+                    $found = true;
+                    break;
+                }
+            }
+
+            if (!$found) {
+                return []; // Le chemin est invalide, un segment n'a pas été trouvé
+            }
+        }
+
+        // À la fin de la boucle, $currentGroup contient le groupe final recherché
+        return [
+            "id" => $currentGroup['id'],
+            "name" => $currentGroup['name'],
+            "path" => $currentGroup['path'],
+        ];
     }
 
-    // Get all groups
+    /**
+     * Récupère tous les sous-groupes de tous les niveaux, en excluant les groupes de premier niveau.
+     *
+     * @return array
+     */
     public function getGroups(): array
     {
+        // 1. Obtenir uniquement les groupes de premier niveau
         $response = $this->httpClient->request('GET', $this->keycloakBaseUrl . '/admin/realms/' . $this->realm . '/groups', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $this->getToken(),
             ]
         ]);
-
         $topLevelGroups = json_decode($response->getContent(), true);
-        $allGroups = [];
 
+        $allSubgroups = [];
+
+        // 2. Pour chaque groupe de premier niveau, lancer la recherche récursive des enfants
         foreach ($topLevelGroups as $group) {
-            $allGroups[] = [
-                'id' => $group['id'],
-                'name' => $group['name'],
-                'path' => $group['path'],
-            ];
-
-            if (!empty($group['subGroups'])) {
-                foreach ($group['subGroups'] as $subgroup) {
-                    $allGroups[] = [
-                        'id' => $subgroup['id'],
-                        'name' => $subgroup['name'],
-                        'path' => $subgroup['path'],
-                    ];
-                }
-            }
+            $this->fetchSubgroupsRecursively($group['id'], $allSubgroups);
         }
 
-        return $allGroups;
+        return $allSubgroups;
+    }
+
+    /**
+     * Méthode récursive pour récupérer les descendants d'un groupe en utilisant l'endpoint /children.
+     *
+     * @param string $groupId L'ID du groupe parent à explorer.
+     * @param array &$subgroupsList La liste (passée par référence) pour accumuler les résultats.
+     */
+    private function fetchSubgroupsRecursively(string $groupId, array &$subgroupsList): void
+    {
+        $first = 0;
+        $max = 50; // On récupère les enfants par lots de 50 pour être efficace
+
+        while (true) {
+            // 1. Appel à l'endpoint /children avec les paramètres de pagination
+            $response = $this->httpClient->request('GET', $this->keycloakBaseUrl . '/admin/realms/' . $this->realm . '/groups/' . $groupId . '/children', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $this->getToken(),
+                ],
+                'query' => [
+                    'first' => $first,
+                    'max' => $max,
+                ]
+            ]);
+
+            $children = json_decode($response->getContent(), true);
+
+            // Si la page est vide, cela signifie qu'on a récupéré tous les enfants. On arrête la boucle.
+            if (empty($children)) {
+                break;
+            }
+
+            // 2. Pour chaque enfant trouvé sur cette page...
+            foreach ($children as $child) {
+                // a. On l'ajoute à notre liste finale
+                $subgroupsList[] = [
+                    'id' => $child['id'],
+                    'name' => $child['name'],
+                    'path' => $child['path'],
+                ];
+
+                // b. On relance la fonction pour cet enfant afin de trouver ses propres enfants
+                $this->fetchSubgroupsRecursively($child['id'], $subgroupsList);
+            }
+
+            // 3. Préparer le prochain appel : on décale l'index de départ
+            $first += $max;
+        }
     }
 
     // Create user in the Realm
