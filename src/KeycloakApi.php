@@ -329,4 +329,30 @@ class KeycloakApi
 
         return $response->getStatusCode() === 204;
     }
+
+    /**
+     * Retrouve un groupe à partir de son chemin complet ou partiel (en partant de la fin).
+     * C'est la méthode la plus fiable car elle utilise la liste complète des groupes.
+     *
+     * @param string $partialGroupPath Le chemin partiel du groupe (ex: "/Anderlecht" ou "/Communes/Anderlecht").
+     * @return array Les informations du groupe ou un tableau vide si non trouvé.
+     */
+    public function findGroup(string $partialGroupPath): array
+    {
+        $cleanedPath = trim($partialGroupPath, '/');
+        if (empty($cleanedPath)) {
+            return [];
+        }
+        $normalizedPathSuffix = '/' . $cleanedPath;
+
+        $allGroups = $this->getGroups();
+
+        foreach ($allGroups as $group) {
+            if (str_ends_with($group['path'], $normalizedPathSuffix)) {
+                return $group; // L'objet groupe contient déjà id, name, path.
+            }
+        }
+
+        return [];
+    }
 }
