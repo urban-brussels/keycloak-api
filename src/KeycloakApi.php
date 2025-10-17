@@ -1,6 +1,7 @@
 <?php
 namespace UrbanBrussels\KeycloakApi;
 
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
@@ -273,6 +274,19 @@ class KeycloakApi
             'json' => $userData,
         ]);
 
+        $statusCode = $response->getStatusCode();
+
+        // Check for 409 Conflict (user already exists)
+        if ($statusCode === 409) {
+            throw new ConflictHttpException('A user with this email or username already exists.');
+        }
+
+        // Check for a successful creation (201 Created)
+        if ($statusCode !== 201) {
+            throw new HttpException($statusCode, 'Failed to create the user in Keycloak.');
+        }
+
+        // On success, get the new user's ID from the 'location' header
         $locationHeader = $response->getHeaders()['location'][0];
         return basename($locationHeader);
     }
